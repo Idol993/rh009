@@ -56,6 +56,41 @@ router.post('/communities', protect, authorize('admin'), async (req, res, next) 
   }
 });
 
+router.put('/communities/:id', protect, authorize('admin'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const community = await Community.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    });
+    if (!community) {
+      return res.status(404).json({ success: false, message: '社区不存在' });
+    }
+    res.json({
+      success: true,
+      data: community
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/communities/:id', protect, authorize('admin'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const community = await Community.findByIdAndDelete(id);
+    if (!community) {
+      return res.status(404).json({ success: false, message: '社区不存在' });
+    }
+    res.json({
+      success: true,
+      message: '删除成功'
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/residents', protect, async (req, res, next) => {
   try {
     const { page = 1, limit = 20, keyword, communityId } = req.query;
@@ -99,6 +134,41 @@ router.post('/residents', protect, async (req, res, next) => {
     res.status(201).json({
       success: true,
       data: resident
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/residents/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const resident = await Resident.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('community', 'name').populate('house', 'roomNo buildingNo');
+    if (!resident) {
+      return res.status(404).json({ success: false, message: '住户不存在' });
+    }
+    res.json({
+      success: true,
+      data: resident
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/residents/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const resident = await Resident.findByIdAndDelete(id);
+    if (!resident) {
+      return res.status(404).json({ success: false, message: '住户不存在' });
+    }
+    res.json({
+      success: true,
+      message: '删除成功'
     });
   } catch (err) {
     next(err);
@@ -198,23 +268,62 @@ router.post('/visitors', protect, async (req, res, next) => {
 router.put('/visitors/:id/approve', protect, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { action } = req.body;
+    const { action, status } = req.body;
 
     const visitor = await Visitor.findById(id);
     if (!visitor) {
       return res.status(404).json({ success: false, message: '访客申请不存在' });
     }
 
-    visitor.status = action === 'approve' ? 'approved' : 'rejected';
+    const targetAction = action || (status === 'approved' ? 'approve' : 'reject');
+    visitor.status = targetAction === 'approve' ? 'approved' : 'rejected';
     visitor.approvedBy = req.user._id;
-    if (action === 'approve') {
+    if (targetAction === 'approve') {
       visitor.qrCode = 'QR' + Math.random().toString(36).substring(2, 10).toUpperCase();
     }
     await visitor.save();
+    await visitor.populate('community', 'name');
+    await visitor.populate('visitingHouse', 'roomNo');
+    await visitor.populate('approvedBy', 'name');
 
     res.json({
       success: true,
       data: visitor
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/visitors/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const visitor = await Visitor.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('community', 'name').populate('visitingHouse', 'roomNo');
+    if (!visitor) {
+      return res.status(404).json({ success: false, message: '访客记录不存在' });
+    }
+    res.json({
+      success: true,
+      data: visitor
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/visitors/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const visitor = await Visitor.findByIdAndDelete(id);
+    if (!visitor) {
+      return res.status(404).json({ success: false, message: '访客记录不存在' });
+    }
+    res.json({
+      success: true,
+      message: '删除成功'
     });
   } catch (err) {
     next(err);
@@ -235,16 +344,60 @@ router.post('/visitors/:id/checkin', protect, async (req, res, next) => {
     visitor.status = 'checkedin';
     if (temperature) visitor.temperature = temperature;
     await visitor.save();
+    await visitor.populate('community', 'name');
+    await visitor.populate('visitingHouse', 'roomNo');
+    await visitor.populate('approvedBy', 'name');
 
     await AccessRecord.create({
       community: visitor.community,
       visitor: visitor._id,
       name: visitor.name,
+      personName: visitor.name,
       type: 'visitor',
+      identity: 'visitor',
       accessType: 'in',
-      gate,
+      gate: gate || '正门',
       temperature,
-      accessMethod: 'qr'
+      accessMethod: 'qr',
+      method: 'qr'
+    });
+
+    res.json({
+      success: true,
+      data: visitor
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/visitors/:id/checkout', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { gate } = req.body;
+
+    const visitor = await Visitor.findById(id);
+    if (!visitor) {
+      return res.status(404).json({ success: false, message: '访客不存在' });
+    }
+
+    visitor.checkoutTime = new Date();
+    visitor.status = 'checkedout';
+    await visitor.save();
+    await visitor.populate('community', 'name');
+    await visitor.populate('visitingHouse', 'roomNo');
+
+    await AccessRecord.create({
+      community: visitor.community,
+      visitor: visitor._id,
+      name: visitor.name,
+      personName: visitor.name,
+      type: 'visitor',
+      identity: 'visitor',
+      accessType: 'out',
+      gate: gate || '正门',
+      accessMethod: 'qr',
+      method: 'qr'
     });
 
     res.json({
@@ -312,7 +465,7 @@ router.post('/security-events', protect, async (req, res, next) => {
 router.put('/security-events/:id/handle', protect, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { action, remark } = req.body;
+    const { action, remark, handleResult, handleRemark, status } = req.body;
 
     const event = await SecurityEvent.findById(id);
     if (!event) {
@@ -320,17 +473,72 @@ router.put('/security-events/:id/handle', protect, async (req, res, next) => {
     }
 
     event.handler = req.user._id;
-    event.status = action === 'close' ? 'closed' : 'resolved';
+    
+    let newStatus = status;
+    if (action === 'close') {
+      newStatus = 'closed';
+    } else if (handleResult === 'resolved') {
+      newStatus = 'resolved';
+    } else if (handleResult === 'processing') {
+      newStatus = 'processing';
+    } else if (handleResult === 'false_alarm') {
+      newStatus = 'closed';
+    } else if (handleResult === 'transferred') {
+      newStatus = 'processing';
+    }
+    
+    if (newStatus) {
+      event.status = newStatus;
+    }
+    
     event.handleProcess.push({
       handler: req.user._id,
-      action: remark,
-      remark
+      action: handleRemark || remark || handleResult || action,
+      remark: handleRemark || remark
     });
     await event.save();
+    await event.populate('community', 'name');
+    await event.populate('reporter', 'name');
+    await event.populate('handler', 'name');
 
     res.json({
       success: true,
       data: event
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/security-events/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const event = await SecurityEvent.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('community', 'name').populate('reporter', 'name').populate('handler', 'name');
+    if (!event) {
+      return res.status(404).json({ success: false, message: '事件不存在' });
+    }
+    res.json({
+      success: true,
+      data: event
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/security-events/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const event = await SecurityEvent.findByIdAndDelete(id);
+    if (!event) {
+      return res.status(404).json({ success: false, message: '事件不存在' });
+    }
+    res.json({
+      success: true,
+      message: '删除成功'
     });
   } catch (err) {
     next(err);
@@ -371,10 +579,63 @@ router.get('/property-fees', protect, async (req, res, next) => {
   }
 });
 
+router.post('/property-fees', protect, async (req, res, next) => {
+  try {
+    const fee = await PropertyFee.create({
+      ...req.body,
+      feeNo: 'PF' + Date.now() + Math.random().toString(36).substring(2, 4).toUpperCase()
+    });
+    await fee.populate('community', 'name');
+    await fee.populate('house', 'roomNo buildingNo');
+    await fee.populate('resident', 'name phone');
+    res.status(201).json({
+      success: true,
+      data: fee
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/property-fees/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const fee = await PropertyFee.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('community', 'name').populate('house', 'roomNo buildingNo').populate('resident', 'name phone');
+    if (!fee) {
+      return res.status(404).json({ success: false, message: '账单不存在' });
+    }
+    res.json({
+      success: true,
+      data: fee
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/property-fees/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const fee = await PropertyFee.findByIdAndDelete(id);
+    if (!fee) {
+      return res.status(404).json({ success: false, message: '账单不存在' });
+    }
+    res.json({
+      success: true,
+      message: '删除成功'
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/property-fees/:id/pay', protect, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { amount, paymentMethod } = req.body;
+    const { amount, paymentMethod, remark } = req.body;
 
     const fee = await PropertyFee.findById(id);
     if (!fee) {
@@ -384,12 +645,16 @@ router.post('/property-fees/:id/pay', protect, async (req, res, next) => {
     fee.paidAmount += amount;
     fee.paidDate = new Date();
     fee.paymentMethod = paymentMethod;
+    if (remark) fee.paymentRemark = remark;
     if (fee.paidAmount >= fee.amount) {
       fee.status = 'paid';
     } else if (fee.paidAmount > 0) {
       fee.status = 'partial';
     }
     await fee.save();
+    await fee.populate('community', 'name');
+    await fee.populate('house', 'roomNo buildingNo');
+    await fee.populate('resident', 'name phone');
 
     res.json({
       success: true,
@@ -432,15 +697,73 @@ router.get('/parking-spaces', protect, async (req, res, next) => {
   }
 });
 
+router.post('/parking-spaces', protect, async (req, res, next) => {
+  try {
+    const space = await ParkingSpace.create(req.body);
+    await space.populate('community', 'name');
+    await space.populate('owner', 'name phone');
+    res.status(201).json({
+      success: true,
+      data: space
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/parking-spaces/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const space = await ParkingSpace.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('community', 'name').populate('owner', 'name phone');
+    if (!space) {
+      return res.status(404).json({ success: false, message: '车位不存在' });
+    }
+    res.json({
+      success: true,
+      data: space
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/parking-spaces/:id', protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const space = await ParkingSpace.findByIdAndDelete(id);
+    if (!space) {
+      return res.status(404).json({ success: false, message: '车位不存在' });
+    }
+    res.json({
+      success: true,
+      message: '删除成功'
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/access-records', protect, async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, type, communityId, startDate, endDate } = req.query;
+    const { page = 1, limit = 20, type, accessType, communityId, startDate, endDate, keyword } = req.query;
     const query = {};
 
     if (communityId) query.community = communityId;
     if (type) query.type = type;
+    if (accessType) query.accessType = accessType;
     if (startDate) query.createdAt = { ...query.createdAt, $gte: new Date(startDate) };
     if (endDate) query.createdAt = { ...query.createdAt, $lte: new Date(endDate) };
+    if (keyword) {
+      query.$or = [
+        { name: { $regex: keyword, $options: 'i' } },
+        { personName: { $regex: keyword, $options: 'i' } },
+        { carPlate: { $regex: keyword, $options: 'i' } },
+        { recordNo: { $regex: keyword, $options: 'i' } }
+      ];
+    }
 
     const records = await AccessRecord.find(query)
       .populate('community', 'name')
@@ -461,6 +784,19 @@ router.get('/access-records', protect, async (req, res, next) => {
         total,
         pages: Math.ceil(total / limit)
       }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/access-records', protect, async (req, res, next) => {
+  try {
+    const record = await AccessRecord.create(req.body);
+    await record.populate('community', 'name');
+    res.status(201).json({
+      success: true,
+      data: record
     });
   } catch (err) {
     next(err);

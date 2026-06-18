@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Tag, Modal, Form, Input, Select, message, Card, Statistic, Row, Col, Space, Switch } from 'antd';
+import { Table, Button, Tag, Modal, Form, Input, Select, InputNumber, message, Card, Statistic, Row, Col, Space, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, CarOutlined, HomeOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { communityAPI } from '../../services/api';

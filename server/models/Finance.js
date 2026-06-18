@@ -108,7 +108,9 @@ const SettlementSchema = new mongoose.Schema({
     default: 'pending'
   },
   paidAt: Date,
+  paidAmount: Number,
   paymentMethod: String,
+  remark: String,
   createdAt: {
     type: Date,
     default: Date.now

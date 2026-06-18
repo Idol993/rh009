@@ -10,11 +10,13 @@ import {
   Modal,
   Form,
   Input,
+  Select,
   Upload,
   message,
   Tag,
   Steps,
-  Image
+  Image,
+  Radio
 } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
@@ -376,15 +378,43 @@ export default function OrderDetail() {
         title="签收确认"
         open={signModalVisible}
         onOk={handleSign}
-        onCancel={() => setSignModalVisible(false)}
+        onCancel={() => {
+          setSignModalVisible(false);
+          signForm.resetFields();
+        }}
+        okText="确认签收"
+        width={500}
+        destroyOnClose
       >
-        <Form form={signForm} layout="vertical">
+        <Form form={signForm} layout="vertical" initialValues={{ signMethod: 'code' }}>
+          <Form.Item name="signMethod" label="签收方式">
+            <Radio.Group>
+              <Radio value="code">验证码签收</Radio>
+              <Radio value="face">人脸识别</Radio>
+            </Radio.Group>
+          </Form.Item>
           <Form.Item
-            name="code"
-            label="验证码"
-            rules={[{ required: true, message: '请输入验证码' }]}
+            noStyle
+            shouldUpdate={(prevValues, currentValues) => prevValues.signMethod !== currentValues.signMethod}
           >
-            <Input placeholder="请输入6位验证码" maxLength={6} />
+            {({ getFieldValue }) => {
+              const method = getFieldValue('signMethod');
+              return method === 'code' ? (
+                <Form.Item
+                  name="code"
+                  label="验证码"
+                  rules={[{ required: true, message: '请输入验证码' }]}
+                >
+                  <Input placeholder="请输入6位验证码" maxLength={6} />
+                </Form.Item>
+              ) : (
+                <div style={{ marginBottom: 24, padding: 20, background: '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>📷</div>
+                  <p style={{ margin: 0, color: '#666' }}>请对准摄像头进行人脸识别</p>
+                  <p style={{ margin: '8px 0 0 0', color: '#999', fontSize: 12 }}>（模拟功能，点击确认即表示识别成功）</p>
+                </div>
+              );
+            }}
           </Form.Item>
           <Form.Item
             name="signName"
@@ -392,12 +422,6 @@ export default function OrderDetail() {
             rules={[{ required: true, message: '请输入签收人姓名' }]}
           >
             <Input placeholder="请输入签收人姓名" />
-          </Form.Item>
-          <Form.Item name="signMethod" label="签收方式" initialValue="code">
-            <Select>
-              <Option value="code">验证码</Option>
-              <Option value="face">人脸识别</Option>
-            </Select>
           </Form.Item>
         </Form>
       </Modal>

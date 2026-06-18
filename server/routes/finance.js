@@ -245,7 +245,7 @@ router.get('/settlements', protect, async (req, res, next) => {
 router.post('/settlements/:id/pay', protect, authorize('admin', 'finance'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { paymentMethod } = req.body;
+    const { paymentMethod, amount, remark } = req.body;
 
     const settlement = await Settlement.findById(id).populate('rider');
     if (!settlement) {
@@ -256,6 +256,8 @@ router.post('/settlements/:id/pay', protect, authorize('admin', 'finance'), asyn
       return res.status(400).json({ success: false, message: '结算单状态不正确' });
     }
 
+    const payAmount = amount || settlement.totalAmount;
+
     settlement.status = 'processing';
     await settlement.save();
 
@@ -264,33 +266,36 @@ router.post('/settlements/:id/pay', protect, authorize('admin', 'finance'), asyn
       return res.status(404).json({ success: false, message: '骑手钱包不存在' });
     }
 
-    wallet.balance += settlement.totalAmount;
-    wallet.totalEarnings += settlement.totalAmount;
-    wallet.todayEarnings += settlement.totalAmount;
+    wallet.balance += payAmount;
+    wallet.totalEarnings += payAmount;
+    wallet.todayEarnings += payAmount;
     wallet.lastSettlementDate = new Date();
     await wallet.save();
 
     const rider = await User.findById(settlement.rider._id);
-    rider.todayEarnings += settlement.totalAmount;
-    rider.totalEarnings += settlement.totalAmount;
+    rider.todayEarnings += payAmount;
+    rider.totalEarnings += payAmount;
     await rider.save();
 
     await Transaction.create({
       transactionNo: generateTransactionNo(),
       type: 'settlement',
-      amount: settlement.totalAmount,
+      amount: payAmount,
       user: settlement.rider._id,
       status: 'completed',
       paymentMethod,
-      description: `日结结算 ${settlement.settlementNo}`,
-      balanceBefore: wallet.balance - settlement.totalAmount,
+      description: remark || `日结结算 ${settlement.settlementNo}`,
+      balanceBefore: wallet.balance - payAmount,
       balanceAfter: wallet.balance
     });
 
     settlement.status = 'paid';
     settlement.paidAt = new Date();
     settlement.paymentMethod = paymentMethod;
+    settlement.paidAmount = payAmount;
+    settlement.remark = remark;
     await settlement.save();
+    await settlement.populate('rider', 'name phone');
 
     res.json({
       success: true,

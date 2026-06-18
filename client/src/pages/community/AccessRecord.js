@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Tag, Card, Statistic, Row, Col, Space, Select, Input, DatePicker } from 'antd';
+import { Table, Button, Tag, Card, Statistic, Row, Col, Space, Select, Input, DatePicker, message } from 'antd';
 import { SearchOutlined, LoginOutlined, LogoutOutlined, UserOutlined, CarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { communityAPI } from '../../services/api';
@@ -23,7 +23,7 @@ export default function AccessRecordManage() {
     setLoading(true);
     try {
       const params = {};
-      if (typeFilter) params.type = typeFilter;
+      if (typeFilter) params.accessType = typeFilter;
       if (dateRange && dateRange.length === 2) {
         params.startDate = dateRange[0].format('YYYY-MM-DD');
         params.endDate = dateRange[1].format('YYYY-MM-DD');
@@ -31,39 +31,48 @@ export default function AccessRecordManage() {
       if (keyword) params.keyword = keyword;
 
       const res = await communityAPI.getAccessRecords(params);
-      if (res.success) setRecords(res.data);
+      if (res.success) {
+        setRecords(res.data || []);
+      } else {
+        setRecords([]);
+        message.error(res.message || '加载数据失败');
+      }
     } catch (err) {
-      message.error('加载数据失败');
+      setRecords([]);
+      message.error('加载数据失败，请稍后重试');
     } finally {
       setLoading(false);
     }
   };
 
-  const getTypeColor = (type) => {
-    return type === 'entry' ? 'green' : 'blue';
+  const getTypeColor = (accessType) => {
+    return accessType === 'in' ? 'green' : 'blue';
   };
 
-  const getTypeText = (type) => {
-    return type === 'entry' ? '进入' : '离开';
+  const getTypeText = (accessType) => {
+    return accessType === 'in' ? '进入' : '离开';
   };
 
-  const getTypeIcon = (type) => {
-    return type === 'entry' ? <LoginOutlined /> : <LogoutOutlined />;
+  const getTypeIcon = (accessType) => {
+    return accessType === 'in' ? <LoginOutlined /> : <LogoutOutlined />;
   };
 
-  const getMethodText = (method) => {
+  const getMethodText = (method, accessMethod) => {
+    const m = method || accessMethod;
     const texts = {
       card: '门禁卡',
       face: '人脸识别',
-      qrcode: '二维码',
+      qr: '二维码',
       password: '密码',
       visitor: '访客登记',
-      license_plate: '车牌识别'
+      license_plate: '车牌识别',
+      other: '其他'
     };
-    return texts[method] || method;
+    return texts[m] || m || '-';
   };
 
-  const getIdentityText = (identity) => {
+  const getIdentityText = (identity, type) => {
+    const i = identity || type;
     const texts = {
       resident: '住户',
       visitor: '访客',
@@ -71,7 +80,11 @@ export default function AccessRecordManage() {
       delivery: '快递外卖',
       other: '其他'
     };
-    return texts[identity] || identity;
+    return texts[i] || i || '-';
+  };
+
+  const getPersonName = (record) => {
+    return record.personName || record.name || (record.resident?.name) || (record.visitor?.name) || '-';
   };
 
   const columns = [
@@ -79,14 +92,15 @@ export default function AccessRecordManage() {
       title: '记录编号',
       dataIndex: 'recordNo',
       key: 'recordNo',
-      width: 140
+      width: 140,
+      render: (v) => v || '-'
     },
     {
       title: '类型',
-      dataIndex: 'type',
-      key: 'type',
+      dataIndex: 'accessType',
+      key: 'accessType',
       width: 80,
-      render: (v) => (
+      render: (v, record) => (
         <Tag icon={getTypeIcon(v)} color={getTypeColor(v)}>
           {getTypeText(v)}
         </Tag>
@@ -96,33 +110,36 @@ export default function AccessRecordManage() {
       title: '人员姓名',
       dataIndex: 'personName',
       key: 'personName',
-      width: 100
+      width: 100,
+      render: (_, record) => getPersonName(record)
     },
     {
       title: '身份',
       dataIndex: 'identity',
       key: 'identity',
       width: 100,
-      render: (v) => <Tag>{getIdentityText(v)}</Tag>
+      render: (v, record) => <Tag>{getIdentityText(v, record.type)}</Tag>
     },
     {
       title: '门禁点',
       dataIndex: 'gate',
       key: 'gate',
-      width: 120
+      width: 120,
+      render: (v) => v || '-'
     },
     {
       title: '所属社区',
       dataIndex: ['community', 'name'],
       key: 'community',
-      width: 150
+      width: 150,
+      render: (v) => v || '-'
     },
     {
       title: '验证方式',
       dataIndex: 'method',
       key: 'method',
       width: 100,
-      render: (v) => getMethodText(v)
+      render: (v, record) => getMethodText(v, record.accessMethod)
     },
     {
       title: '车牌号',
@@ -143,20 +160,24 @@ export default function AccessRecordManage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 160,
-      render: (v) => dayjs(v).format('YYYY-MM-DD HH:mm:ss')
+      render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-'
     }
   ];
 
-  const todayRecords = records.filter(r => 
+  const todayRecords = records.filter(r =>
     dayjs(r.createdAt).isSame(dayjs(), 'day')
   );
 
   const stats = {
     total: records.length,
     today: todayRecords.length,
-    entry: todayRecords.filter(r => r.type === 'entry').length,
-    exit: todayRecords.filter(r => r.type === 'exit').length,
-    visitor: records.filter(r => r.identity === 'visitor').length
+    entry: todayRecords.filter(r => r.accessType === 'in').length,
+    exit: todayRecords.filter(r => r.accessType === 'out').length,
+    visitor: records.filter(r => r.identity === 'visitor' || r.type === 'visitor').length
+  };
+
+  const handleSearch = (value) => {
+    setKeyword(value);
   };
 
   return (
@@ -187,21 +208,21 @@ export default function AccessRecordManage() {
       <Card title="门禁记录">
         <Space style={{ marginBottom: 16 }} wrap>
           <Search
-            placeholder="搜索姓名/车牌号"
+            placeholder="搜索姓名/车牌号/编号"
             allowClear
             enterButton={<SearchOutlined />}
-            onSearch={setKeyword}
+            onSearch={handleSearch}
             style={{ width: 250 }}
           />
           <Select
-            placeholder="类型筛选"
+            placeholder="通行类型"
             allowClear
             style={{ width: 120 }}
             value={typeFilter}
             onChange={setTypeFilter}
           >
-            <Option value="entry">进入</Option>
-            <Option value="exit">离开</Option>
+            <Option value="in">进入</Option>
+            <Option value="out">离开</Option>
           </Select>
           <RangePicker value={dateRange} onChange={setDateRange} />
           <Button onClick={loadData} icon={<SearchOutlined />}>查询</Button>
@@ -212,8 +233,8 @@ export default function AccessRecordManage() {
           dataSource={records}
           rowKey="_id"
           loading={loading}
-          pagination={{ 
-            pageSize: 10, 
+          pagination={{
+            pageSize: 10,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条记录`
           }}

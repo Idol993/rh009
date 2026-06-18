@@ -92,7 +92,7 @@ export default function SecurityManage() {
       fire: '火灾',
       gas_leak: '燃气泄漏',
       noise: '噪音扰民',
-      parking: '乱停乱放',
+      parking_violation: '乱停乱放',
       damage: '公共设施损坏',
       other: '其他'
     };
@@ -287,7 +287,7 @@ export default function SecurityManage() {
                   <Option value="fire">火灾</Option>
                   <Option value="gas_leak">燃气泄漏</Option>
                   <Option value="noise">噪音扰民</Option>
-                  <Option value="parking">乱停乱放</Option>
+                  <Option value="parking_violation">乱停乱放</Option>
                   <Option value="damage">公共设施损坏</Option>
                   <Option value="other">其他</Option>
                 </Select>

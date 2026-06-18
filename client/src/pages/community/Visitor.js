@@ -85,8 +85,8 @@ export default function VisitorManage() {
     const colors = {
       pending: 'orange',
       approved: 'blue',
-      checked_in: 'green',
-      checked_out: 'default',
+      checkedin: 'green',
+      checkedout: 'default',
       rejected: 'red'
     };
     return colors[status] || 'default';
@@ -96,8 +96,8 @@ export default function VisitorManage() {
     const texts = {
       pending: '待审核',
       approved: '已通过',
-      checked_in: '已进入',
-      checked_out: '已离开',
+      checkedin: '已进入',
+      checkedout: '已离开',
       rejected: '已拒绝'
     };
     return texts[status] || status;
@@ -179,7 +179,7 @@ export default function VisitorManage() {
     total: visitors.length,
     pending: visitors.filter(v => v.status === 'pending').length,
     approved: visitors.filter(v => v.status === 'approved').length,
-    inside: visitors.filter(v => v.status === 'checked_in').length
+    inside: visitors.filter(v => v.status === 'checkedin').length
   };
 
   return (
@@ -220,8 +220,8 @@ export default function VisitorManage() {
             >
               <Option value="pending">待审核</Option>
               <Option value="approved">已通过</Option>
-              <Option value="checked_in">已进入</Option>
-              <Option value="checked_out">已离开</Option>
+              <Option value="checkedin">已进入</Option>
+              <Option value="checkedout">已离开</Option>
             </Select>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
               访客登记

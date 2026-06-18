@@ -182,7 +182,7 @@ const SecurityEventSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['intrusion', 'fire', 'fight', 'theft', 'accident', 'complaint', 'maintenance', 'other'],
+    enum: ['intrusion', 'fire', 'fight', 'theft', 'accident', 'complaint', 'maintenance', 'other', 'gas_leak', 'noise', 'parking_violation', 'damage'],
     required: true
   },
   level: {
@@ -318,6 +318,10 @@ const ParkingSpaceSchema = new mongoose.Schema({
 });
 
 const AccessRecordSchema = new mongoose.Schema({
+  recordNo: {
+    type: String,
+    unique: true
+  },
   community: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Community',
@@ -332,10 +336,15 @@ const AccessRecordSchema = new mongoose.Schema({
     ref: 'Visitor'
   },
   name: String,
+  personName: String,
   type: {
     type: String,
     enum: ['resident', 'visitor', 'staff'],
     required: true
+  },
+  identity: {
+    type: String,
+    enum: ['resident', 'visitor', 'staff', 'delivery', 'other']
   },
   accessType: {
     type: String,
@@ -345,15 +354,33 @@ const AccessRecordSchema = new mongoose.Schema({
   gate: String,
   accessMethod: {
     type: String,
-    enum: ['card', 'face', 'qr', 'password', 'other'],
+    enum: ['card', 'face', 'qr', 'password', 'other', 'license_plate'],
     default: 'card'
   },
+  method: String,
+  carPlate: String,
   temperature: Number,
   photo: String,
   createdAt: {
     type: Date,
     default: Date.now
   }
+});
+
+AccessRecordSchema.pre('save', function(next) {
+  if (!this.recordNo) {
+    this.recordNo = 'AR' + Date.now() + Math.random().toString(36).substring(2, 6).toUpperCase();
+  }
+  if (!this.personName && this.name) {
+    this.personName = this.name;
+  }
+  if (!this.identity && this.type) {
+    this.identity = this.type;
+  }
+  if (!this.method && this.accessMethod) {
+    this.method = this.accessMethod;
+  }
+  next();
 });
 
 const Community = mongoose.model('Community', CommunitySchema);
