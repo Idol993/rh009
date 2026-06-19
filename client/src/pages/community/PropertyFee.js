@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Tag, Modal, Form, Input, Select, message, Card, Statistic, Row, Col, Space, DatePicker, InputNumber } from 'antd';
+import { Table, Button, Tag, Modal, Form, Input, Select, InputNumber, message, Card, Statistic, Row, Col, Space, DatePicker } from 'antd';
 import { PlusOutlined, CheckCircleOutlined, DollarOutlined, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { communityAPI } from '../../services/api';
 
 const { Option } = Select;
-const { RangePicker } = DatePicker;
+const { TextArea } = Input;
+const { MonthPicker } = DatePicker;
+
+const FEE_TYPE_MAP = {
+  property: '物业费',
+  water: '水费',
+  electricity: '电费',
+  gas: '燃气费',
+  parking: '停车费',
+  other: '其他'
+};
 
 export default function PropertyFeeManage() {
   const [fees, setFees] = useState([]);
@@ -32,10 +42,11 @@ export default function PropertyFeeManage() {
         communityAPI.getPropertyFees(params),
         communityAPI.getResidents()
       ]);
-      if (feesRes.success) setFees(feesRes.data);
-      if (resRes.success) setResidents(resRes.data);
+      if (feesRes.success) setFees(feesRes.data || []);
+      if (resRes.success) setResidents(resRes.data || []);
     } catch (err) {
       message.error('加载数据失败');
+      setFees([]);
     } finally {
       setLoading(false);
     }
@@ -47,37 +58,62 @@ export default function PropertyFeeManage() {
     setModalVisible(true);
   };
 
+  const handleResidentChange = (residentId) => {
+    const selected = residents.find(r => r._id === residentId);
+    if (selected) {
+      form.setFieldsValue({
+        houseDisplay: selected.house?.roomNo || selected.house?.houseNo || '-',
+        communityDisplay: selected.community?.name || '-',
+      });
+    }
+  };
+
   const handlePay = (fee) => {
     setSelectedFee(fee);
-    payForm.setFieldsValue({ amount: fee.amount });
+    const remaining = (fee.amount || 0) - (fee.paidAmount || 0);
+    payForm.resetFields();
+    payForm.setFieldsValue({ amount: remaining });
     setPayModalVisible(true);
   };
 
   const handleSubmit = async (values) => {
     try {
+      const selected = residents.find(r => r._id === values.residentId);
+      if (!selected) {
+        message.error('请选择住户');
+        return;
+      }
+
       const submitData = {
-        ...values,
-        startDate: values.period[0].format('YYYY-MM-DD'),
-        endDate: values.period[1].format('YYYY-MM-DD'),
-        dueDate: values.dueDate.format('YYYY-MM-DD')
+        community: selected.community?._id || selected.community,
+        house: selected.house?._id || selected.house,
+        resident: selected._id,
+        type: values.type,
+        amount: values.amount,
+        period: {
+          year: values.periodMonth ? dayjs(values.periodMonth).year() : new Date().getFullYear(),
+          month: values.periodMonth ? dayjs(values.periodMonth).month() + 1 : new Date().getMonth() + 1,
+        },
+        dueDate: values.dueDate ? dayjs(values.dueDate).toDate() : undefined,
       };
-      delete submitData.period;
+
       const res = await communityAPI.createPropertyFee(submitData);
       if (res.success) {
-        message.success('创建成功');
+        message.success('账单生成成功');
         setModalVisible(false);
         loadData();
       }
     } catch (err) {
-      message.error('创建失败');
+      message.error(err.response?.data?.message || '创建失败');
     }
   };
 
   const handlePayConfirm = async (values) => {
     try {
       const res = await communityAPI.payPropertyFee(selectedFee._id, {
-        ...values,
-        paidAt: new Date()
+        amount: values.amount,
+        paymentMethod: values.paymentMethod,
+        remark: values.remark,
       });
       if (res.success) {
         message.success('缴费成功');
@@ -85,20 +121,8 @@ export default function PropertyFeeManage() {
         loadData();
       }
     } catch (err) {
-      message.error('缴费失败');
+      message.error(err.response?.data?.message || '缴费失败');
     }
-  };
-
-  const getTypeText = (type) => {
-    const texts = {
-      property: '物业费',
-      water: '水费',
-      electricity: '电费',
-      gas: '燃气费',
-      parking: '停车费',
-      other: '其他'
-    };
-    return texts[type] || type;
   };
 
   const getStatusColor = (status) => {
@@ -123,38 +147,46 @@ export default function PropertyFeeManage() {
       dataIndex: 'type',
       key: 'type',
       width: 100,
-      render: (v) => <Tag>{getTypeText(v)}</Tag>
+      render: (v) => <Tag>{FEE_TYPE_MAP[v] || v}</Tag>
     },
     {
       title: '住户',
       dataIndex: ['resident', 'name'],
       key: 'resident',
-      width: 100
+      width: 100,
+      render: (v) => v || '-'
     },
     {
       title: '房屋',
-      dataIndex: ['house', 'houseNo'],
+      dataIndex: ['house', 'roomNo'],
       key: 'house',
-      width: 100
+      width: 100,
+      render: (v) => v || '-'
+    },
+    {
+      title: '社区',
+      dataIndex: ['community', 'name'],
+      key: 'community',
+      width: 120,
+      render: (v) => v || '-'
     },
     {
       title: '计费周期',
       key: 'period',
-      width: 200,
-      render: (_, record) => (
-        <span>
-          {record.startDate ? dayjs(record.startDate).format('YYYY-MM-DD') : ''}
-          {' ~ '}
-          {record.endDate ? dayjs(record.endDate).format('YYYY-MM-DD') : ''}
-        </span>
-      )
+      width: 120,
+      render: (_, record) => {
+        if (record.period) {
+          return `${record.period.year || ''}-${String(record.period.month || '').padStart(2, '0')}`;
+        }
+        return '-';
+      }
     },
     {
       title: '应缴金额',
       dataIndex: 'amount',
       key: 'amount',
       width: 100,
-      render: (v) => <strong>¥{v?.toFixed(2)}</strong>
+      render: (v) => <strong>¥{(v || 0).toFixed(2)}</strong>
     },
     {
       title: '已缴金额',
@@ -164,10 +196,21 @@ export default function PropertyFeeManage() {
       render: (v) => `¥${(v || 0).toFixed(2)}`
     },
     {
+      title: '支付方式',
+      dataIndex: 'paymentMethod',
+      key: 'paymentMethod',
+      width: 100,
+      render: (v) => {
+        if (!v) return '-';
+        const map = { wechat: '微信', alipay: '支付宝', cash: '现金', bank: '银行转账' };
+        return map[v] || v;
+      }
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 80,
+      width: 100,
       render: (v) => <Tag color={getStatusColor(v)}>{getStatusText(v)}</Tag>
     },
     {
@@ -240,6 +283,7 @@ export default function PropertyFeeManage() {
             >
               <Option value="unpaid">未缴费</Option>
               <Option value="paid">已缴费</Option>
+              <Option value="partial">部分缴费</Option>
               <Option value="overdue">已逾期</Option>
             </Select>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -254,7 +298,7 @@ export default function PropertyFeeManage() {
           rowKey="_id"
           loading={loading}
           pagination={{ pageSize: 10 }}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1500 }}
         />
       </Card>
 
@@ -264,9 +308,24 @@ export default function PropertyFeeManage() {
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={600}
+        destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="residentId" label="住户" rules={[{ required: true, message: '请选择住户' }]}>
+                <Select
+                  placeholder="请选择住户"
+                  showSearch
+                  optionFilterProp="children"
+                  onChange={handleResidentChange}
+                >
+                  {residents.map(r => (
+                    <Option key={r._id} value={r._id}>{r.name} - {r.house?.roomNo || r.house?.houseNo || ''}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
             <Col span={12}>
               <Form.Item name="type" label="费用类型" initialValue="property" rules={[{ required: true, message: '请选择费用类型' }]}>
                 <Select>
@@ -279,23 +338,25 @@ export default function PropertyFeeManage() {
                 </Select>
               </Form.Item>
             </Col>
+          </Row>
+          <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="resident" label="住户" rules={[{ required: true, message: '请选择住户' }]}>
-                <Select placeholder="请选择住户" showSearch optionFilterProp="children">
-                  {residents.map(r => (
-                    <Option key={r._id} value={r._id}>{r.name} - {r.house?.houseNo}</Option>
-                  ))}
-                </Select>
+              <Form.Item label="所属社区">
+                <Input disabled placeholder="选择住户后自动带出" name="communityDisplay" />
+                <Form.Item name="communityDisplay" noStyle><Input type="hidden" /></Form.Item>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="房屋">
+                <Input disabled placeholder="选择住户后自动带出" name="houseDisplay" />
+                <Form.Item name="houseDisplay" noStyle><Input type="hidden" /></Form.Item>
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="period" label="计费周期" rules={[{ required: true, message: '请选择计费周期' }]}>
-            <RangePicker style={{ width: '100%' }} />
-          </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="amount" label="应缴金额" rules={[{ required: true, message: '请输入金额' }]}>
-                <InputNumber style={{ width: '100%' }} min={0} step={0.01} prefix="¥" />
+              <Form.Item name="periodMonth" label="计费月份" rules={[{ required: true, message: '请选择计费月份' }]}>
+                <DatePicker picker="month" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -304,8 +365,8 @@ export default function PropertyFeeManage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="remark" label="备注">
-            <Input.TextArea rows={3} placeholder="请输入备注信息" />
+          <Form.Item name="amount" label="应缴金额" rules={[{ required: true, message: '请输入金额' }]}>
+            <InputNumber style={{ width: '100%' }} min={0} step={0.01} prefix="¥" />
           </Form.Item>
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
@@ -324,20 +385,21 @@ export default function PropertyFeeManage() {
         onCancel={() => setPayModalVisible(false)}
         footer={null}
         width={500}
+        destroyOnClose
       >
         {selectedFee && (
           <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
             <p><strong>账单编号:</strong> {selectedFee.feeNo}</p>
-            <p><strong>费用类型:</strong> {getTypeText(selectedFee.type)}</p>
+            <p><strong>费用类型:</strong> {FEE_TYPE_MAP[selectedFee.type] || selectedFee.type}</p>
             <p><strong>住户:</strong> {selectedFee.resident?.name}</p>
-            <p><strong>应缴金额:</strong> <span style={{ color: '#f5222d', fontSize: 18 }}>¥{selectedFee.amount?.toFixed(2)}</span></p>
+            <p><strong>应缴金额:</strong> <span style={{ color: '#f5222d', fontSize: 18 }}>¥{(selectedFee.amount || 0).toFixed(2)}</span></p>
             <p><strong>已缴金额:</strong> ¥{(selectedFee.paidAmount || 0).toFixed(2)}</p>
-            <p><strong>待缴金额:</strong> <span style={{ color: '#f5222d', fontSize: 18, fontWeight: 'bold' }}>¥{(selectedFee.amount - (selectedFee.paidAmount || 0)).toFixed(2)}</span></p>
+            <p><strong>待缴金额:</strong> <span style={{ color: '#f5222d', fontSize: 18, fontWeight: 'bold' }}>¥{((selectedFee.amount || 0) - (selectedFee.paidAmount || 0)).toFixed(2)}</span></p>
           </div>
         )}
         <Form form={payForm} layout="vertical" onFinish={handlePayConfirm}>
           <Form.Item name="amount" label="缴费金额" rules={[{ required: true, message: '请输入缴费金额' }]}>
-            <InputNumber style={{ width: '100%' }} min={0} step={0.01} prefix="¥" />
+            <InputNumber style={{ width: '100%' }} min={0.01} step={0.01} prefix="¥" />
           </Form.Item>
           <Form.Item name="paymentMethod" label="支付方式" initialValue="wechat" rules={[{ required: true, message: '请选择支付方式' }]}>
             <Select>
@@ -348,7 +410,7 @@ export default function PropertyFeeManage() {
             </Select>
           </Form.Item>
           <Form.Item name="remark" label="备注">
-            <Input.TextArea rows={2} placeholder="请输入备注信息" />
+            <TextArea rows={2} placeholder="请输入备注信息" />
           </Form.Item>
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>

@@ -25,10 +25,11 @@ export default function CommunityManage() {
         communityAPI.getCommunities(),
         communityAPI.getStatistics()
       ]);
-      if (commRes.success) setCommunities(commRes.data);
+      if (commRes.success) setCommunities(commRes.data || []);
       if (statsRes.success) setStatistics(statsRes.data);
     } catch (err) {
       message.error('加载数据失败');
+      setCommunities([]);
     } finally {
       setLoading(false);
     }
@@ -42,7 +43,15 @@ export default function CommunityManage() {
 
   const handleEdit = (community) => {
     setEditingCommunity(community);
-    form.setFieldsValue(community);
+    form.setFieldsValue({
+      name: community.name,
+      address: community.address,
+      totalBuildings: community.totalBuildings,
+      totalHouses: community.totalHouses,
+      contactPhone: community.contactPhone,
+      propertyCompany: community.propertyCompany,
+      area: community.area,
+    });
     setModalVisible(true);
   };
 
@@ -60,11 +69,21 @@ export default function CommunityManage() {
 
   const handleSubmit = async (values) => {
     try {
+      const submitData = {
+        name: values.name,
+        address: values.address,
+        totalBuildings: values.totalBuildings || 0,
+        totalHouses: values.totalHouses || 0,
+        contactPhone: values.contactPhone || undefined,
+        propertyCompany: values.propertyCompany || undefined,
+        area: values.area || undefined,
+      };
+
       let res;
       if (editingCommunity) {
-        res = await communityAPI.updateCommunity(editingCommunity._id, values);
+        res = await communityAPI.updateCommunity(editingCommunity._id, submitData);
       } else {
-        res = await communityAPI.createCommunity(values);
+        res = await communityAPI.createCommunity(submitData);
       }
       if (res.success) {
         message.success(editingCommunity ? '更新成功' : '创建成功');
@@ -72,7 +91,7 @@ export default function CommunityManage() {
         loadData();
       }
     } catch (err) {
-      message.error(editingCommunity ? '更新失败' : '创建失败');
+      message.error(err.response?.data?.message || (editingCommunity ? '更新失败' : '创建失败'));
     }
   };
 
@@ -86,38 +105,43 @@ export default function CommunityManage() {
     {
       title: '地址',
       dataIndex: 'address',
-      key: 'address'
+      key: 'address',
+      ellipsis: true
     },
     {
       title: '楼栋数',
-      dataIndex: 'buildingCount',
-      key: 'buildingCount',
-      width: 80
+      dataIndex: 'totalBuildings',
+      key: 'totalBuildings',
+      width: 80,
+      render: (v) => v ?? '-'
     },
     {
       title: '房屋数',
-      dataIndex: 'houseCount',
-      key: 'houseCount',
-      width: 80
+      dataIndex: 'totalHouses',
+      key: 'totalHouses',
+      width: 80,
+      render: (v) => v ?? '-'
     },
     {
-      title: '住户数',
-      dataIndex: 'residentCount',
-      key: 'residentCount',
-      width: 80
+      title: '物业公司',
+      dataIndex: 'propertyCompany',
+      key: 'propertyCompany',
+      width: 130,
+      render: (v) => v || '-'
     },
     {
       title: '物业电话',
-      dataIndex: 'propertyPhone',
-      key: 'propertyPhone',
-      width: 130
+      dataIndex: 'contactPhone',
+      key: 'contactPhone',
+      width: 130,
+      render: (v) => v || '-'
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 160,
-      render: (v) => dayjs(v).format('YYYY-MM-DD HH:mm')
+      render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'
     },
     {
       title: '操作',
@@ -142,7 +166,7 @@ export default function CommunityManage() {
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
           <Col span={6}>
             <Card>
-              <Statistic title="社区总数" value={statistics.totalCommunities || 0} prefix={<HomeOutlined />} />
+              <Statistic title="社区总数" value={communities.length} prefix={<HomeOutlined />} />
             </Card>
           </Col>
           <Col span={6}>
@@ -186,6 +210,7 @@ export default function CommunityManage() {
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={600}
+        destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item name="name" label="社区名称" rules={[{ required: true, message: '请输入社区名称' }]}>
@@ -196,31 +221,35 @@ export default function CommunityManage() {
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="buildingCount" label="楼栋数" initialValue={0}>
+              <Form.Item name="totalBuildings" label="楼栋数" initialValue={0}>
                 <InputNumber style={{ width: '100%' }} min={0} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="houseCount" label="房屋数" initialValue={0}>
+              <Form.Item name="totalHouses" label="房屋数" initialValue={0}>
                 <InputNumber style={{ width: '100%' }} min={0} />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="propertyPhone" label="物业电话">
+              <Form.Item name="contactPhone" label="物业电话">
                 <Input placeholder="请输入物业电话" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="manager" label="负责人">
-                <Input placeholder="请输入负责人姓名" />
+              <Form.Item name="propertyCompany" label="物业公司">
+                <Input placeholder="请输入物业公司名称" />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="description" label="备注">
-            <TextArea rows={3} placeholder="请输入备注信息" />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="area" label="面积(㎡)">
+                <InputNumber style={{ width: '100%' }} min={0} />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
               <Button onClick={() => setModalVisible(false)}>取消</Button>

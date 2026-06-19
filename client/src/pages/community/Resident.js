@@ -5,7 +5,6 @@ import dayjs from 'dayjs';
 import { communityAPI } from '../../services/api';
 
 const { Option } = Select;
-const { TextArea } = Input;
 
 export default function ResidentManage() {
   const [residents, setResidents] = useState([]);
@@ -28,10 +27,11 @@ export default function ResidentManage() {
         communityAPI.getResidents(),
         communityAPI.getCommunities()
       ]);
-      if (resRes.success) setResidents(resRes.data);
-      if (commRes.success) setCommunities(commRes.data);
+      if (resRes.success) setResidents(resRes.data || []);
+      if (commRes.success) setCommunities(commRes.data || []);
     } catch (err) {
       message.error('加载数据失败');
+      setResidents([]);
     } finally {
       setLoading(false);
     }
@@ -40,14 +40,16 @@ export default function ResidentManage() {
   const loadHouses = async (communityId) => {
     try {
       const res = await communityAPI.getHouses({ communityId });
-      if (res.success) setHouses(res.data);
+      if (res.success) setHouses(res.data || []);
     } catch (err) {
       message.error('加载房屋列表失败');
+      setHouses([]);
     }
   };
 
   const handleCommunityChange = (value) => {
     setSelectedCommunity(value);
+    form.setFieldsValue({ house: undefined });
     loadHouses(value);
   };
 
@@ -61,9 +63,20 @@ export default function ResidentManage() {
 
   const handleEdit = (resident) => {
     setEditingResident(resident);
-    form.setFieldsValue(resident);
-    if (resident.community?._id) {
-      handleCommunityChange(resident.community._id);
+    const communityId = resident.community?._id || resident.community;
+    form.setFieldsValue({
+      name: resident.name,
+      phone: resident.phone,
+      idCard: resident.idCard,
+      community: communityId,
+      house: resident.house?._id || resident.house,
+      relation: resident.relation,
+      status: resident.status,
+      gender: resident.gender,
+    });
+    if (communityId) {
+      setSelectedCommunity(communityId);
+      loadHouses(communityId);
     }
     setModalVisible(true);
   };
@@ -82,11 +95,22 @@ export default function ResidentManage() {
 
   const handleSubmit = async (values) => {
     try {
+      const submitData = {
+        name: values.name,
+        phone: values.phone,
+        idCard: values.idCard,
+        community: values.community,
+        house: values.house || undefined,
+        relation: values.relation,
+        status: values.status,
+        gender: values.gender || undefined,
+      };
+
       let res;
       if (editingResident) {
-        res = await communityAPI.updateResident(editingResident._id, values);
+        res = await communityAPI.updateResident(editingResident._id, submitData);
       } else {
-        res = await communityAPI.createResident(values);
+        res = await communityAPI.createResident(submitData);
       }
       if (res.success) {
         message.success(editingResident ? '更新成功' : '创建成功');
@@ -94,7 +118,7 @@ export default function ResidentManage() {
         loadData();
       }
     } catch (err) {
-      message.error(editingResident ? '更新失败' : '创建失败');
+      message.error(err.response?.data?.message || (editingResident ? '更新失败' : '创建失败'));
     }
   };
 
@@ -128,19 +152,29 @@ export default function ResidentManage() {
       title: '身份证号',
       dataIndex: 'idCard',
       key: 'idCard',
-      width: 180
+      width: 180,
+      render: (v) => v || '-'
     },
     {
       title: '所属社区',
       dataIndex: ['community', 'name'],
       key: 'community',
-      width: 150
+      width: 150,
+      render: (v) => v || '-'
     },
     {
       title: '房屋',
-      dataIndex: ['house', 'houseNo'],
       key: 'house',
-      width: 100
+      width: 120,
+      render: (_, record) => {
+        const house = record.house;
+        if (!house) return '-';
+        if (typeof house === 'string') return house;
+        const parts = [];
+        if (house.buildingNo) parts.push(house.buildingNo);
+        if (house.roomNo) parts.push(house.roomNo);
+        return parts.join('-') || '-';
+      }
     },
     {
       title: '身份',
@@ -155,13 +189,6 @@ export default function ResidentManage() {
       key: 'status',
       width: 80,
       render: (v) => <Tag color={getStatusColor(v)}>{getStatusText(v)}</Tag>
-    },
-    {
-      title: '入住时间',
-      dataIndex: 'moveInDate',
-      key: 'moveInDate',
-      width: 120,
-      render: (v) => v ? dayjs(v).format('YYYY-MM-DD') : '-'
     },
     {
       title: '操作',
@@ -226,7 +253,7 @@ export default function ResidentManage() {
           rowKey="_id"
           loading={loading}
           pagination={{ pageSize: 10 }}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1100 }}
         />
       </Card>
 
@@ -236,8 +263,9 @@ export default function ResidentManage() {
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={600}
+        destroyOnClose
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ relation: 'owner', status: 'active' }}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
@@ -250,7 +278,7 @@ export default function ResidentManage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="idCard" label="身份证号" rules={[{ required: true, message: '请输入身份证号' }]}>
+          <Form.Item name="idCard" label="身份证号">
             <Input placeholder="请输入身份证号" />
           </Form.Item>
           <Row gutter={16}>
@@ -267,7 +295,9 @@ export default function ResidentManage() {
               <Form.Item name="house" label="房屋" rules={[{ required: true, message: '请选择房屋' }]}>
                 <Select placeholder="请先选择社区" disabled={!selectedCommunity}>
                   {houses.map(h => (
-                    <Option key={h._id} value={h._id}>{h.houseNo}</Option>
+                    <Option key={h._id} value={h._id}>
+                      {h.buildingNo ? `${h.buildingNo}-` : ''}{h.roomNo || h.houseNo || ''}
+                    </Option>
                   ))}
                 </Select>
               </Form.Item>
@@ -275,7 +305,7 @@ export default function ResidentManage() {
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="relation" label="身份" initialValue="owner" rules={[{ required: true, message: '请选择身份' }]}>
+              <Form.Item name="relation" label="身份" rules={[{ required: true, message: '请选择身份' }]}>
                 <Select>
                   <Option value="owner">业主</Option>
                   <Option value="tenant">租客</Option>
@@ -284,13 +314,19 @@ export default function ResidentManage() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="moveInDate" label="入住时间">
-                <Input type="date" style={{ width: '100%' }} />
+              <Form.Item name="gender" label="性别">
+                <Select placeholder="请选择性别" allowClear>
+                  <Option value="male">男</Option>
+                  <Option value="female">女</Option>
+                </Select>
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="remark" label="备注">
-            <TextArea rows={3} placeholder="请输入备注信息" />
+          <Form.Item name="status" label="状态">
+            <Select>
+              <Option value="active">正常</Option>
+              <Option value="inactive">已迁出</Option>
+            </Select>
           </Form.Item>
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>

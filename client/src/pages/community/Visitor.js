@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Tag, Modal, Form, Input, Select, message, Card, Statistic, Row, Col, Space, DatePicker } from 'antd';
+import { Table, Button, Tag, Modal, Form, Input, Select, message, Card, Statistic, Row, Col, Space } from 'antd';
 import { PlusOutlined, CheckCircleOutlined, UserOutlined, SafetyOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { communityAPI } from '../../services/api';
 
 const { Option } = Select;
-const { RangePicker } = DatePicker;
+
+const VISIT_TYPE_MAP = {
+  visit: '探亲访友',
+  delivery: '快递外卖',
+  service: '家政/维修',
+  other: '其他'
+};
 
 export default function VisitorManage() {
   const [visitors, setVisitors] = useState([]);
@@ -29,10 +35,11 @@ export default function VisitorManage() {
         communityAPI.getVisitors(params),
         communityAPI.getResidents()
       ]);
-      if (visRes.success) setVisitors(visRes.data);
-      if (resRes.success) setResidents(resRes.data);
+      if (visRes.success) setVisitors(visRes.data || []);
+      if (resRes.success) setResidents(resRes.data || []);
     } catch (err) {
       message.error('加载数据失败');
+      setVisitors([]);
     } finally {
       setLoading(false);
     }
@@ -46,38 +53,66 @@ export default function VisitorManage() {
 
   const handleApprove = async (id) => {
     try {
-      const res = await communityAPI.approveVisitor(id, { status: 'approved' });
+      const res = await communityAPI.approveVisitor(id, { action: 'approve' });
       if (res.success) {
         message.success('审核通过');
         loadData();
       }
     } catch (err) {
-      message.error('操作失败');
+      message.error(err.response?.data?.message || '操作失败');
     }
   };
 
   const handleCheckin = async (id) => {
     try {
-      const res = await communityAPI.checkinVisitor(id, { checkinTime: new Date() });
+      const res = await communityAPI.checkinVisitor(id, {});
       if (res.success) {
-        message.success('登记成功');
+        message.success('登记成功，已生成门禁记录');
         loadData();
       }
     } catch (err) {
-      message.error('操作失败');
+      message.error(err.response?.data?.message || '操作失败');
+    }
+  };
+
+  const handleResidentChange = (residentId) => {
+    const selected = residents.find(r => r._id === residentId);
+    if (selected) {
+      form.setFieldsValue({
+        hostName: selected.name,
+        hostPhone: selected.phone,
+      });
     }
   };
 
   const handleSubmit = async (values) => {
     try {
-      const res = await communityAPI.createVisitor(values);
+      const selected = residents.find(r => r._id === values.residentId);
+      if (!selected) {
+        message.error('请选择被访住户');
+        return;
+      }
+
+      const submitData = {
+        name: values.name,
+        phone: values.phone,
+        idCard: values.idCard,
+        visitType: values.visitType,
+        community: selected.community?._id || selected.community,
+        visitingHouse: selected.house?._id || selected.house,
+        hostName: selected.name,
+        hostPhone: selected.phone,
+        carNumber: values.carNumber || undefined,
+      };
+
+      const res = await communityAPI.createVisitor(submitData);
       if (res.success) {
         message.success('登记成功');
         setModalVisible(false);
         loadData();
       }
     } catch (err) {
-      message.error('登记失败');
+      message.error(err.response?.data?.message || '登记失败');
     }
   };
 
@@ -114,31 +149,43 @@ export default function VisitorManage() {
       title: '手机号',
       dataIndex: 'phone',
       key: 'phone',
-      width: 130
-    },
-    {
-      title: '身份证号',
-      dataIndex: 'idCard',
-      key: 'idCard',
-      width: 180
+      width: 130,
+      render: (v) => v || '-'
     },
     {
       title: '被访人',
-      dataIndex: ['resident', 'name'],
-      key: 'resident',
-      width: 100
+      dataIndex: 'hostName',
+      key: 'hostName',
+      width: 100,
+      render: (v) => v || '-'
     },
     {
       title: '访问房屋',
-      dataIndex: ['house', 'houseNo'],
-      key: 'house',
-      width: 100
+      dataIndex: ['visitingHouse', 'roomNo'],
+      key: 'visitingHouse',
+      width: 120,
+      render: (v) => v || '-'
+    },
+    {
+      title: '所属社区',
+      dataIndex: ['community', 'name'],
+      key: 'community',
+      width: 120,
+      render: (v) => v || '-'
     },
     {
       title: '访问事由',
-      dataIndex: 'purpose',
-      key: 'purpose',
-      width: 100
+      dataIndex: 'visitType',
+      key: 'visitType',
+      width: 100,
+      render: (v) => VISIT_TYPE_MAP[v] || v || '-'
+    },
+    {
+      title: '车牌号',
+      dataIndex: 'carNumber',
+      key: 'carNumber',
+      width: 110,
+      render: (v) => v || '-'
     },
     {
       title: '状态',
@@ -148,9 +195,9 @@ export default function VisitorManage() {
       render: (v) => <Tag color={getStatusColor(v)}>{getStatusText(v)}</Tag>
     },
     {
-      title: '到访时间',
-      dataIndex: 'expectedVisitTime',
-      key: 'visitTime',
+      title: '登记时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 160,
       render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'
     },
@@ -235,7 +282,7 @@ export default function VisitorManage() {
           rowKey="_id"
           loading={loading}
           pagination={{ pageSize: 10 }}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1300 }}
         />
       </Card>
 
@@ -245,6 +292,7 @@ export default function VisitorManage() {
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={600}
+        destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Row gutter={16}>
@@ -259,37 +307,49 @@ export default function VisitorManage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="idCard" label="身份证号" rules={[{ required: true, message: '请输入身份证号' }]}>
+          <Form.Item name="idCard" label="身份证号">
             <Input placeholder="请输入身份证号" />
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="resident" label="被访住户" rules={[{ required: true, message: '请选择被访住户' }]}>
-                <Select placeholder="请选择被访住户" showSearch optionFilterProp="children">
+              <Form.Item name="residentId" label="被访住户" rules={[{ required: true, message: '请选择被访住户' }]}>
+                <Select
+                  placeholder="请选择被访住户"
+                  showSearch
+                  optionFilterProp="children"
+                  onChange={handleResidentChange}
+                >
                   {residents.map(r => (
-                    <Option key={r._id} value={r._id}>{r.name} - {r.house?.houseNo}</Option>
+                    <Option key={r._id} value={r._id}>
+                      {r.name} - {r.community?.name || ''} - {r.house?.roomNo || r.house?.houseNo || ''}
+                    </Option>
                   ))}
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="purpose" label="访问事由" rules={[{ required: true, message: '请选择访问事由' }]}>
+              <Form.Item name="visitType" label="访问事由" initialValue="visit" rules={[{ required: true, message: '请选择访问事由' }]}>
                 <Select>
                   <Option value="visit">探亲访友</Option>
                   <Option value="delivery">快递外卖</Option>
-                  <Option value="service">家政服务</Option>
-                  <Option value="maintenance">维修人员</Option>
+                  <Option value="service">家政/维修</Option>
                   <Option value="other">其他</Option>
                 </Select>
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="expectedVisitTime" label="预计到访时间">
-            <DatePicker showTime style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="carPlate" label="车牌号">
-            <Input placeholder="如有车辆请填写车牌号" />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="hostName" label="被访人姓名">
+                <Input placeholder="选择住户后自动带出" disabled />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="carNumber" label="车牌号">
+                <Input placeholder="如有车辆请填写车牌号" />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
               <Button onClick={() => setModalVisible(false)}>取消</Button>
